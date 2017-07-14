@@ -8,7 +8,6 @@ def is_numeric(s):
         return True
     return False
 
-
 def type_calculation(type):
     f_index = type.index("(")
     l_index = type.index(")")
@@ -25,23 +24,40 @@ def did_reply(filepath, id):
         return True
     return False
 
+def remove_comment(reddit):
+    threshold = 0
+    for comment in bot_profile.comments(limit=500):
+        if comment.score < threshold:
+            comment.delete()
+        elif comment.author == None:
+            if comment.body == "[removed]" or comment.body == "[deleted]":
+                comment.delete()
+
 def reply(reddit, amount):
     for comment in reddit.subreddit(test_sub).comments(limit=amount):
         has_replied = did_reply(comments_replied_filename, comment.id)
         valid_string = is_numeric(comment.body)
         not_bot = comment.author != reddit.user.me()
         if not has_replied and valid_string and not_bot:
-            f_index = comment.body.index("(")
-            l_index = comment.body.index(")", len(comment.body) - 1)
-            if comment.body[:f_index] == "expand":
-                result = expand(comment.body[f_index + 1:l_index])
+            try:
+                f_index = comment.body.index("(")
+                l_index = comment.body.index(")", len(comment.body) - 1)
                 quote = "> {}".format(comment.body[f_index + 1:l_index])
-                comment_reply = "{q} \n\n = {r}".format(q=quote.replace(" ", ""), r=result).replace("**", "^")
-                print("Replying")
-                comment.reply(comment_reply)
-
+                if comment.body[:f_index] == "expand":
+                    result = expand(comment.body[f_index + 1:l_index])
+                    comment_reply = "{q} \n\n = {r}".format(q=quote, r=result).replace("**", "^")
+                    print("Replying - expand")
+                    comment.reply(comment_reply)
+                elif comment.body[:f_index] == "simplify":
+                    result = simplify(comment.body[f_index + 1:l_index])
+                    comment_reply = "{q} \n\n = {r}".format(q=quote, r=result).replace("**", "^")
+                    print("Replying - simplify")
+                    comment.reply(comment_reply)
                 
-
+                with open(comments_replied_filename, "a") as f:
+                    f.write(comment.id + "\n")
+            except Exception as e:
+                pass
         
 reddit = praw.Reddit("bot1")
 test_sub = "PythonInfoBotTest"
@@ -54,4 +70,4 @@ blacklisted_users_filepath = "C:\\Users\\Gutman\\Desktop\\Reddit_Bot\\blackliste
 posts_replied_filepath = "C:\\Users\\Gutman\\Desktop\\Reddit_Bot\\posts_replied.txt"
 comments_replied_filename = "C:\\Users\\Gutman\\Desktop\\Reddit_Bot\\comment_replied.txt"
 
-reply(reddit, 5)
+reply(reddit, 50)
