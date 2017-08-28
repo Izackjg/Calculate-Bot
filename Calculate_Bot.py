@@ -1,73 +1,88 @@
-from sympy import *
+import sys
 import praw
 import re
+from sympy import *
 
-def is_numeric(s):
+def contains_symbols(comment_body):
     allowed_chars = ["+", "-", "*", "/", "**", "^", "//", "(", ")"]
-    if any(x in s for x in allowed_chars) and re.compile("\d+"):
+    if any(char in comment_body for char in allowed_chars):
         return True
     return False
 
-def type_calculation(type):
-    f_index = type.index("(")
-    l_index = type.index(")")
-    if type == "expand":
-        result = expand(type[f_index + 1:l_index])
-        return result
-    elif type == "simplify":
-        result = simplify(type[f_index + 1:l_index])
-        return result
-
-
-def did_reply(filepath, id):
-    if id in open(filepath).read():
+def did_reply(file_path, id):
+    if id in open(file_path).read():
         return True
     return False
 
-def remove_comment(reddit):
+def remove_comment(bot_profile):
     threshold = 0
-    for comment in bot_profile.comments(limit=500):
+    for comment in bot_profile.comments.controversial(limit=None):
         if comment.score < threshold:
             comment.delete()
+            print("comment deleted - downvoted @ {} with {} score".format(comment.id, comment.score))
         elif comment.author == None:
             if comment.body == "[removed]" or comment.body == "[deleted]":
                 comment.delete()
+                print("comment author deleted/removed")
+
+def calculate_string(comment_body):
+    """ Pass the comment body object from the praw API.
+        No need to pass the comment body formatted in any way.
+        Since this function will do the calculations and string formatting. """
+    if type(comment_body) is not str:
+        raise TypeError("type of comment body must be type of string")
+    else:
+        if comment_body:
+            dict_types = {"expand" : expand, "solve" : solve, "diff" : diff}
+            paren_index_one = comment_body.index("(")
+            paren_index_two = comment_body.index(")", len(comment_body) - 1)
+            type_string = comment_body[:paren_index_one]
+            eq_string = comment_body[paren_index_one + 1:paren_index_two]
+            for key, item in dict_types.items():
+                if key == type_string:
+                    return type_string, eq_string, dict_types[type_string](eq_string)
+            return None
 
 def reply(reddit, amount):
-    for comment in reddit.subreddit(test_sub).comments(limit=amount):
-        has_replied = did_reply(comments_replied_filename, comment.id)
-        valid_string = is_numeric(comment.body)
-        not_bot = comment.author != reddit.user.me()
-        if not has_replied and valid_string and not_bot:
-            try:
-                f_index = comment.body.index("(")
-                l_index = comment.body.index(")", len(comment.body) - 1)
-                quote = "> {}".format(comment.body[f_index + 1:l_index])
-                if comment.body[:f_index] == "expand":
-                    result = expand(comment.body[f_index + 1:l_index])
-                    comment_reply = "{q} \n\n = {r}".format(q=quote, r=result).replace("**", "^")
-                    print("Replying - expand")
-                    comment.reply(comment_reply)
-                elif comment.body[:f_index] == "simplify":
-                    result = simplify(comment.body[f_index + 1:l_index])
-                    comment_reply = "{q} \n\n = {r}".format(q=quote, r=result).replace("**", "^")
-                    print("Replying - simplify")
-                    comment.reply(comment_reply)
-                
-                with open(comments_replied_filename, "a") as f:
+    items = ["PythonInfoBotTest", "C:\\Users\\Gutman\\Desktop\\Reddit_Bot\\comment_replied.txt"]
+    replace_char = "^"
+    white_space = " "
+    try:
+        for comment in reddit.subreddit(items[0]).comments(limit=amount):
+            has_replied = did_reply(items[1], comment.id)
+            valid_string = contains_symbols(comment.body)
+            not_bot = comment.author != reddit.user.me()
+            if not has_replied and valid_string and not_bot:
+                calc_type_str, equation_str, result = calculate_string(comment.body)
+                if replace_char in equation_str:
+                    equation_str = equation_str.replace(replace_char, "**")
+                if white_space in equation_str:
+                    equation_str = equation_str.replace(white_space, "")
+                quote_string = "> {}({})".format(calc_type_str, equation_str)
+                comment_reply = "{q} \n\n = {r}".format(q=quote_string, r=result)
+                comment.reply(comment_reply)
+                print("replying")
+
+                with open(items[1], "a") as f:
                     f.write(comment.id + "\n")
-            except Exception as e:
-                pass
-        
-reddit = praw.Reddit("bot1")
-test_sub = "PythonInfoBotTest"
-submission_id = "6mmzhz"
-bot_name = "UserInfo_Bot"
-bot_profile = reddit.redditor(bot_name) 
+    except Exception as e:
+        pass 
 
-blacklisted_subs_filepath = "C:\\Users\\Gutman\\Desktop\\Reddit_Bot\\blacklisted_subreddits.txt"
-blacklisted_users_filepath = "C:\\Users\\Gutman\\Desktop\\Reddit_Bot\\blacklisted_users.txt"
-posts_replied_filepath = "C:\\Users\\Gutman\\Desktop\\Reddit_Bot\\posts_replied.txt"
-comments_replied_filename = "C:\\Users\\Gutman\\Desktop\\Reddit_Bot\\comment_replied.txt"
+def main():
+    reddit = praw.Reddit("bot1")
+    test_sub = "PythonInfoBotTest"
+    submission_id = "6mmzhz"
+    bot_name = "UserInfo_Bot"
+    bot_profile = reddit.redditor(bot_name) 
 
-reply(reddit, 50)
+    blacklisted_subs_filepath = "C:\\Users\\Gutman\\Desktop\\Reddit_Bot\\blacklisted_subreddits.txt"
+    blacklisted_users_filepath = "C:\\Users\\Gutman\\Desktop\\Reddit_Bot\\blacklisted_users.txt"
+    posts_replied_filepath = "C:\\Users\\Gutman\\Desktop\\Reddit_Bot\\posts_replied.txt"
+    comments_replied_filename = "C:\\Users\\Gutman\\Desktop\\Reddit_Bot\\comment_replied.txt"
+
+    remove_comment(bot_profile)
+    reply(reddit, 50)
+     
+
+if __name__ == "__main__":
+    sys.exit(int(main() or 0))      
