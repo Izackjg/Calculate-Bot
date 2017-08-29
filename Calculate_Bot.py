@@ -1,7 +1,10 @@
 import sys
 import praw
 import re
+from time import sleep
 from sympy import *
+
+# TODO - Have solve function return +-(result) instead of a list of results. Maybe?
 
 def contains_symbols(comment_body):
     allowed_chars = ["+", "-", "*", "/", "**", "^", "//", "(", ")"]
@@ -33,7 +36,7 @@ def calculate_string(comment_body):
         raise TypeError("type of comment body must be type of string")
     else:
         if comment_body:
-            dict_types = {"expand" : expand, "solve" : solve, "diff" : diff}
+            dict_types = {"expand" : expand, "solve" : solve, "diff" : diff, "simplify" : simplify}
             paren_index_one = comment_body.index("(")
             paren_index_two = comment_body.index(")", len(comment_body) - 1)
             type_string = comment_body[:paren_index_one]
@@ -43,30 +46,35 @@ def calculate_string(comment_body):
                     return type_string, eq_string, dict_types[type_string](eq_string)
             return None
 
-def reply(reddit, amount):
-    items = ["PythonInfoBotTest", "C:\\Users\\Gutman\\Desktop\\Reddit_Bot\\comment_replied.txt"]
-    replace_char = "^"
-    white_space = " "
-    try:
-        for comment in reddit.subreddit(items[0]).comments(limit=amount):
-            has_replied = did_reply(items[1], comment.id)
-            valid_string = contains_symbols(comment.body)
-            not_bot = comment.author != reddit.user.me()
-            if not has_replied and valid_string and not_bot:
-                calc_type_str, equation_str, result = calculate_string(comment.body)
-                if replace_char in equation_str:
-                    equation_str = equation_str.replace(replace_char, "**")
-                if white_space in equation_str:
-                    equation_str = equation_str.replace(white_space, "")
-                quote_string = "> {}({})".format(calc_type_str, equation_str)
-                comment_reply = "{q} \n\n = {r}".format(q=quote_string, r=result)
-                comment.reply(comment_reply)
-                print("replying")
+def reply(reddit, amount, debug=True):  
+    test_sub = reddit.subreddit("PythonInfoBotTest")
+    test_submission = reddit.submission("6w5mcu")
+    replied_comments_file = "C:\\Users\\Gutman\\Desktop\\Reddit_Bot\\comment_replied.txt"
 
-                with open(items[1], "a") as f:
-                    f.write(comment.id + "\n")
-    except Exception as e:
-        pass 
+    if debug:
+        try:
+            for comment in test_sub.comments():
+                has_replied = did_reply(replied_comments_file, comment.id)
+                is_bot = comment.author == reddit.user.me()
+                valid_string = contains_symbols(comment.body)
+                if not has_replied and not is_bot and valid_string:
+                    calculation_type, comment_equation, equation_result = calculate_string(comment.body)
+                    if "**" in comment_equation:
+                        comment_equation = comment_equation.replace("**", "^")
+                    quote_reply = "> {}({})".format(calculation_type, comment_equation)
+                    comment_reply = "{} \n\n= {}".format(quote_reply, equation_result)
+                    comment.reply(comment_reply)
+                    print("replying")
+
+                    with open(replied_comments_file, "a") as f:
+                        f.write(comment.id + "\n")
+        except Exception as e:
+            if e == praw.exceptions.APIException:
+                print("rate_limit reached, sleeping 100 seconds")
+                sleep(100)
+
+
+
 
 def main():
     reddit = praw.Reddit("bot1")
@@ -81,7 +89,7 @@ def main():
     comments_replied_filename = "C:\\Users\\Gutman\\Desktop\\Reddit_Bot\\comment_replied.txt"
 
     remove_comment(bot_profile)
-    reply(reddit, 50)
+    reply(reddit, None)
      
 
 if __name__ == "__main__":
