@@ -1,96 +1,91 @@
 import sys
 import praw
-import re
+import re   
 from time import sleep
 from sympy import *
 
-# TODO - Have solve function return +-(result) instead of a list of results. Maybe?
+DEBUG = True
+DEBUG_TYPE = "sub"
+TEST_SUBREDDIT_NAME = "PythonInfoBotTest"
+TEST_SUBMISSION_ID = "6x9gmo"
+COMMENT_LIMIT = 500
+
+BOT_USERNAME = "UserInfo_Bot"
+EXCLUDE_STRINGS = ["ExcludeMe", "ExcludeSubreddit"]
+INCLUDE_STRING = "IncludeMe"
+DOWNVOTE_REMOVE_FOOTER = "^(Downvote To Remove)"
+FOOTER_SEPERATOR = "^|"
+
+blacklisted_subs_filepath = "blacklisted_subreddits.txt"
+blacklisted_users_filepath = "blacklisted_users.txt"
+posts_replied_filepath = "posts_replied.txt"
+comments_replied_filename = "comment_replied.txt"
+
+reddit = praw.Reddit("bot1")
+calculation_types = {"expand" : expand, "solve" : solve, "diff" : diff, "simplify" : simplify}
+
 
 def contains_symbols(comment_body):
     allowed_chars = ["+", "-", "*", "/", "**", "^", "//", "(", ")"]
-    if any(char in comment_body for char in allowed_chars):
-        return True
-    return False
+    return any(char in comment_body for char in allowed_chars)
 
-def did_reply(file_path, id):
-    if id in open(file_path).read():
-        return True
-    return False
+def did_reply(file_path, comment_id):
+    return comment_id in open(file_path).read()
+
+def write_id_to_file(file_path, comment_id):
+    with open(file_path, "a") as f:
+        f.write(comment_id + "\n")
 
 def remove_comment(bot_profile):
     threshold = 0
     for comment in bot_profile.comments.controversial(limit=None):
         if comment.score < threshold:
             comment.delete()
-            print("comment deleted - downvoted @ {} with {} score".format(comment.id, comment.score))
         elif comment.author == None:
-            if comment.body == "[removed]" or comment.body == "[deleted]":
+            if comment.boy == "[removed]" or comment.body == "[deleted]":
                 comment.delete()
-                print("comment author deleted/removed")
 
-def calculate_string(comment_body):
-    """ Pass the comment body object from the praw API.
-        No need to pass the comment body formatted in any way.
-        Since this function will do the calculations and string formatting. """
-    if type(comment_body) is not str:
-        raise TypeError("type of comment body must be type of string")
+def string_prefix(calc_types, comment):
+    if type(comment) is not str:
+        raise TypeError("type of comment body must be of type string")
+    elif type(calc_types) is not dict:
+        raise TypeError("type of calc_types must be of type dict")
     else:
-        if comment_body:
-            dict_types = {"expand" : expand, "solve" : solve, "diff" : diff, "simplify" : simplify}
-            paren_index_one = comment_body.index("(")
-            paren_index_two = comment_body.index(")", len(comment_body) - 1)
-            type_string = comment_body[:paren_index_one]
-            eq_string = comment_body[paren_index_one + 1:paren_index_two]
-            for key, item in dict_types.items():
-                if key == type_string:
-                    return type_string, eq_string, dict_types[type_string](eq_string)
-            return None
-
-def reply(reddit, amount, debug=True):  
-    test_sub = reddit.subreddit("PythonInfoBotTest")
-    test_submission = reddit.submission("6w5mcu")
-    replied_comments_file = "C:\\Users\\Gutman\\Desktop\\Reddit_Bot\\comment_replied.txt"
-
-    if debug:
-        try:
-            for comment in test_sub.comments():
-                has_replied = did_reply(replied_comments_file, comment.id)
-                is_bot = comment.author == reddit.user.me()
-                valid_string = contains_symbols(comment.body)
-                if not has_replied and not is_bot and valid_string:
-                    calculation_type, comment_equation, equation_result = calculate_string(comment.body)
-                    if "**" in comment_equation:
-                        comment_equation = comment_equation.replace("**", "^")
-                    quote_reply = "> {}({})".format(calculation_type, comment_equation)
-                    comment_reply = "{} \n\n= {}".format(quote_reply, equation_result)
-                    comment.reply(comment_reply)
-                    print("replying")
-
-                    with open(replied_comments_file, "a") as f:
-                        f.write(comment.id + "\n")
-        except Exception as e:
-            if e == praw.exceptions.APIException:
-                print("rate_limit reached, sleeping 100 seconds")
-                sleep(100)
-
-
-
-
+        if comment.body:
+            paren_index_one = comment.body.index("(")
+            paren_index_two = comment.body.index(")", comment.body[-1])
+            calculation_prefix = comment.body[:paren_index_one]
+            equation = comment.body[paren_index_one + 1:paren_index_two]
+            for key, item in calc_types.items():
+                if key == calculation_prefix:
+                    return calculation_prefix, equation, calc_types[calculation_prefix](equation)
+            return None    
+        
+def generate_reply(comment):
+    comment_prefix, equation, result = string_prefix(calculation_types, comment)
+    if "**" in equation:
+        equation = equation.remove("**", "^")
+    quote = "> {}({})".format(comment_prefix, equation)
+    footer = "[{}]".format(DOWNVOTE_REMOVE_FOOTER)
+    reply = "{} \n\n= {} \n\n*** {}".format(quote, result, footer)
+    return reply
+            
 def main():
-    reddit = praw.Reddit("bot1")
-    test_sub = "PythonInfoBotTest"
-    submission_id = "6mmzhz"
-    bot_name = "UserInfo_Bot"
-    bot_profile = reddit.redditor(bot_name) 
+    try:
+        for comment in reddit.submission(TEST_SUBMISSION_ID).comments(limit=50):
+            if not did_reply(comments_replied_filename, comment.id):
+                if not comment.author == reddit.user.me():
+                    if contains_symbols(comment.body):
+                        comment_reply = generate_reply(comment)
+                        comment.reply(comment_reply)
+                        print("replying")
 
-    blacklisted_subs_filepath = "C:\\Users\\Gutman\\Desktop\\Reddit_Bot\\blacklisted_subreddits.txt"
-    blacklisted_users_filepath = "C:\\Users\\Gutman\\Desktop\\Reddit_Bot\\blacklisted_users.txt"
-    posts_replied_filepath = "C:\\Users\\Gutman\\Desktop\\Reddit_Bot\\posts_replied.txt"
-    comments_replied_filename = "C:\\Users\\Gutman\\Desktop\\Reddit_Bot\\comment_replied.txt"
+                        write_id_to_file(comments_replied_filename, comment.id)
+    except Exception as e:
+        if e == praw.exceptions.APIException:
+            print("rate limit exceeded, sleeping 100 seconds")
+            sleep(100)
 
-    remove_comment(bot_profile)
-    reply(reddit, None)
-     
-
+            
 if __name__ == "__main__":
-    sys.exit(int(main() or 0))      
+    sys.exit(int(main() or 0)) 
